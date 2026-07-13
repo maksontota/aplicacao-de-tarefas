@@ -1,0 +1,259 @@
+const { useState, useEffect, createContext, useContext } = React;
+const { createRoot } = ReactDOM;
+const { BrowserRouter, Routes, Route, Link, useNavigate, useParams } = ReactRouterDOM;
+
+// ==========================================
+// 1. CONTEXTO GLOBAL (TaskContext)
+// ==========================================
+const TaskContext = createContext();
+
+function TaskProvider({ children }) {
+  const [tasks, setTasks] = useState([]);
+
+  // Efeito 1: Carrega as tarefas salvas no localStorage ao iniciar a aplicação
+  useEffect(() => {
+    const storedTasks = JSON.parse(localStorage.getItem('tasks')) || [];
+    setTasks(storedTasks);
+  }, []);
+
+  // Efeito 2: Sincroniza as tarefas com o localStorage sempre que a lista mudar
+  useEffect(() => {
+    // Evita sobrescrever o localStorage com um array vazio antes do primeiro carregamento completo
+    if (tasks.length > 0 || localStorage.getItem('tasks')) {
+      localStorage.setItem('tasks', JSON.stringify(tasks));
+    }
+  }, [tasks]);
+
+  const addTask = (title, description) => {
+    const newTask = {
+      id: Date.now().toString(), // Gera um ID único simples baseado no timestamp
+      title,
+      description,
+      completed: false
+    };
+    setTasks([...tasks, newTask]);
+  };
+
+  const removeTask = (taskId) => {
+    setTasks(tasks.filter(task => task.id !== taskId));
+  };
+
+  const editTask = (updatedTask) => {
+    setTasks(tasks.map(task => (task.id === updatedTask.id ? updatedTask : task)));
+  };
+
+  const toggleTaskCompletion = (taskId) => {
+    setTasks(tasks.map(task => 
+      task.id === taskId ? { ...task, completed: !task.completed } : task
+    ));
+  };
+
+  return (
+    <TaskContext.Provider value={{ tasks, addTask, removeTask, editTask, toggleTaskCompletion }}>
+      {children}
+    </TaskContext.Provider>
+  );
+}
+
+// ==========================================
+// 2. COMPONENTES DE PÁGINAS (PAGES)
+// ==========================================
+
+// --- Página: Home (Lista de Tarefas) ---
+function Home() {
+  const { tasks, removeTask, toggleTaskCompletion } = useContext(TaskContext);
+
+  return (
+    <div className="task-layout">
+      <div className="task-header">
+        <h1>Minhas Tarefas</h1>
+        <Link to="/add-task" className="btn btn-default">
+          + Nova Tarefa
+        </Link>
+      </div>
+
+      {tasks.length === 0 ? (
+        <p className="no-tasks">Você não tem nenhuma tarefa cadastrada.</p>
+      ) : (
+        <div className="task-list">
+          {tasks.map((task) => (
+            <div key={task.id} className={`task-item ${task.completed ? 'completed' : ''}`}>
+              <div className="task-info">
+                <input 
+                  type="checkbox" 
+                  checked={task.completed} 
+                  onChange={() => toggleTaskCompletion(task.id)} 
+                />
+                <div>
+                  <h3>{task.title}</h3>
+                  <p>{task.description}</p>
+                </div>
+              </div>
+              <div className="task-actions">
+                <Link to={`/edit-task/${task.id}`} className="btn btn-outline" style={{ marginRight: '10px' }}>
+                  Editar
+                </Link>
+                <button onClick={() => removeTask(task.id)} className="btn btn-delete">
+                  Excluir
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Página: Adicionar Tarefa ---
+function AddTask() {
+  const { addTask } = useContext(TaskContext);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const navigate = useNavigate(); // Hook para redirecionar o usuário após o envio
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+
+    addTask(title, description);
+    navigate("/"); // Redireciona de volta para a Home
+  };
+
+  return (
+    <div className="form-layout">
+      <h1>Adicionar Nova Tarefa</h1>
+      <form onSubmit={handleSubmit} className="task-form">
+        <label className="label">
+          Título da Tarefa *
+          <input 
+            type="text" 
+            className="input"
+            placeholder="Ex: Estudar React" 
+            value={title} 
+            required
+            onChange={(e) => setTitle(e.target.value)} 
+          />
+        </label>
+        
+        <label className="label">
+          Descrição (Opcional)
+          <textarea 
+            className="input"
+            placeholder="Detalhes sobre a tarefa..." 
+            value={description} 
+            onChange={(e) => setDescription(e.target.value)} 
+            rows="4"
+          />
+        </label>
+
+        <div className="form-buttons">
+          <Link to="/" className="btn btn-outline">Cancelar</Link>
+          <button type="submit" className="btn btn-default">Salvar Tarefa</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// --- Página: Editar Tarefa ---
+function EditTask() {
+  const { tasks, editTask } = useContext(TaskContext);
+  const { id } = useParams(); // Pega o ID passado na URL
+  const navigate = useNavigate();
+
+  // Busca a tarefa correspondente no estado global
+  const currentTask = tasks.find(t => t.id === id);
+
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+
+  // Preenche os inputs com os dados da tarefa assim que ela for localizada
+  useEffect(() => {
+    if (currentTask) {
+      setTitle(currentTask.title);
+      setDescription(currentTask.description);
+    }
+  }, [currentTask]);
+
+  if (!currentTask) {
+    return (
+      <div className="task-layout">
+        <h2>Tarefa não encontrada!</h2>
+        <Link to="/" className="btn btn-default">Voltar para a Home</Link>
+      </div>
+    );
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+
+    editTask({
+      ...currentTask,
+      title,
+      description
+    });
+    navigate("/");
+  };
+
+  return (
+    <div className="form-layout">
+      <h1>Editar Tarefa</h1>
+      <form onSubmit={handleSubmit} className="task-form">
+        <label className="label">
+          Título da Tarefa *
+          <input 
+            type="text" 
+            className="input"
+            value={title} 
+            required
+            onChange={(e) => setTitle(e.target.value)} 
+          />
+        </label>
+        
+        <label className="label">
+          Descrição
+          <textarea 
+            className="input"
+            value={description} 
+            onChange={(e) => setDescription(e.target.value)} 
+            rows="4"
+          />
+        </label>
+
+        <div className="form-buttons">
+          <Link to="/" className="btn btn-outline">Cancelar</Link>
+          <button type="submit" className="btn btn-default">Atualizar Tarefa</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ==========================================
+// 3. COMPONENTE RAIZ (App) E RENDERIZAÇÃO
+// ==========================================
+function App() {
+  return (
+    <BrowserRouter>
+      {/* O Provider encapsula as rotas para disponibilizar o estado em qualquer página */}
+      <TaskProvider>
+        <div className="container" style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/add-task" element={<AddTask />} />
+            <Route path="/edit-task/:id" element={<EditTask />} />
+          </Routes>
+        </div>
+      </TaskProvider>
+    </BrowserRouter>
+  );
+}
+
+const root = document.querySelector("#root");
+createRoot(root).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
